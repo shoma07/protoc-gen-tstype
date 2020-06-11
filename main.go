@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -35,36 +36,63 @@ func mapKeys(m map[string]string) []string {
 	return ks
 }
 
-func processReq(req *plugin.CodeGeneratorRequest) *plugin.CodeGeneratorResponse {
+func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse, error) {
+	var err error
 	var resp plugin.CodeGeneratorResponse
 	for _, file := range req.ProtoFile {
 		for _, messageType := range file.GetMessageType() {
-			if len(messageType.GetNestedType()) > 0 {
-				panic("not support nested type")
-			}
 			buf := new(bytes.Buffer)
+			fields := make(map[string]string)
+			nestedTypes := make(map[string]string)
+			messageTypeName := messageType.GetName()
 			var oneofTypes []map[string]string
 			for range messageType.GetOneofDecl() {
 				oneofTypes = append(oneofTypes, make(map[string]string))
 			}
-			fmt.Fprintf(buf, "type %s = Readonly<{\n", messageType.GetName())
+			for _, nestedType := range messageType.GetNestedType() {
+				options := nestedType.GetOptions()
+				if options != nil && options.GetMapEntry() {
+					name := nestedType.GetName()
+					key := convertType(nestedType.GetField()[0], nestedTypes)
+					value := convertType(nestedType.GetField()[1], nestedTypes)
+					nestedTypes[name] = fmt.Sprintf("{ [key: %s]: %s; }", key, value)
+				} else {
+					err = errors.New("not support nested type!")
+				}
+			}
 			for _, field := range messageType.GetField() {
 				key := field.GetJsonName()
-				tsType := convertType(field)
+				tsType := convertType(field, nestedTypes)
 				if field.OneofIndex != nil {
 					oneofTypes[field.GetOneofIndex()][key] = tsType
 				} else {
-					fmt.Fprintf(buf, "  %s: %s;\n", key, tsType)
+					fields[key] = tsType
 				}
 			}
-			fmt.Fprintf(buf, "}>")
+			if len(fields) > 0 {
+				fmt.Fprintf(buf, "type %s = Readonly<{\n", messageTypeName)
+				for key, tsType := range fields {
+					fmt.Fprintf(buf, "  %s: %s;\n", key, tsType)
+				}
+				fmt.Fprintf(buf, "}>")
+				if len(oneofTypes) > 0 {
+					fmt.Fprintf(buf, " &\n")
+				}
+			} else if len(oneofTypes) > 0 {
+				fmt.Fprintf(buf, "type %s =\n", messageTypeName)
+			} else {
+				fmt.Fprintf(buf, "type %s = null")
+			}
 			writeOneofTypes(buf, oneofTypes)
 			fmt.Fprintf(buf, ";\n")
-			appendBufferToFile(&resp, messageType.GetName(), buf)
+			appendBufferToFile(&resp, messageTypeName, buf)
 		}
 		writeEnumType(&resp, *file)
 	}
-	return &resp
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 func appendBufferToFile(resp *plugin.CodeGeneratorResponse, name string, buf *bytes.Buffer) {
@@ -92,9 +120,6 @@ func writeEnumType(resp *plugin.CodeGeneratorResponse, file descriptor.FileDescr
 
 func writeOneofTypes(buf *bytes.Buffer, oneofTypes []map[string]string) {
 	for index, oneof := range oneofTypes {
-		if index == 0 {
-			fmt.Fprintf(buf, " &\n")
-		}
 		fmt.Fprintf(buf, "  Readonly<\n")
 		oneofKeys := mapKeys(oneof)
 		for oneofIndex, oneofKey := range oneofKeys {
@@ -121,7 +146,7 @@ func writeOneofTypes(buf *bytes.Buffer, oneofTypes []map[string]string) {
 	}
 }
 
-func convertType(field *descriptor.FieldDescriptorProto) string {
+func convertType(field *descriptor.FieldDescriptorProto, nestedTypes map[string]string) string {
 	var tsType string
 	switch field.GetType() {
 	case descriptor.FieldDescriptorProto_TYPE_DOUBLE,
@@ -149,7 +174,9 @@ func convertType(field *descriptor.FieldDescriptorProto) string {
 	default:
 		tsType = "unknown"
 	}
-	if field.GetLabel() == descriptor.FieldDescriptorProto_LABEL_REPEATED {
+	if val, ok := nestedTypes[tsType]; ok {
+		tsType = "Readonly<" + val + ">"
+	} else if field.GetLabel() == descriptor.FieldDescriptorProto_LABEL_REPEATED {
 		tsType = "ReadonlyArray<" + tsType + ">"
 	}
 	return tsType
@@ -170,7 +197,11 @@ func run() error {
 		return err
 	}
 
-	resp := processReq(req)
+	resp, err := processReq(req)
+
+	if err != nil {
+		return err
+	}
 
 	return emitResp(resp)
 }

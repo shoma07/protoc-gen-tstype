@@ -2,6 +2,18 @@
 
 Generate TypeScript Readonly type from Proto file.
 
+## Install
+
+```
+$ go get github.com/shoma07/protoc-gen-tstype
+```
+
+## Run
+
+```
+$ protoc -I. --plugin=protoc-gen-tstype --tstype_out=. hoge.proto
+```
+
 ## Types
 
 ### Message
@@ -73,8 +85,7 @@ message SampleMessage {
 ```
 
 ```typescript
-type SampleMessage = Readonly<{
-}> &
+type SampleMessage =
   Readonly<
     {
       name?: string;
@@ -89,11 +100,22 @@ type SampleMessage = Readonly<{
 
 ### Maps
 
-**Implementation plan**
+```proto
+message SampleMessage {
+  map<string, Project> projects = 1;
+}
+```
+
+```typescript
+type SampleMessage = Readonly<{
+  projects: Readonly<{ [key: string]: Project; }>;
+}>;
+```
 
 ### Nested Types
 
-**Not Support**
+NestedType other than map is not supported.
+Define message without nesting it.
 
 ## License
 
