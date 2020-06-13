@@ -122,21 +122,16 @@ func writeOneofTypes(buf *bytes.Buffer, oneofTypes []map[string]string) {
 	for index, oneof := range oneofTypes {
 		fmt.Fprintf(buf, "  Readonly<\n")
 		oneofKeys := mapKeys(oneof)
-		for oneofIndex, oneofKey := range oneofKeys {
-			fmt.Fprintf(buf, "    {\n")
+		for _, oneofKey := range oneofKeys {
+			fmt.Fprintf(buf, "    | {\n")
 			for key, tsType := range oneof {
 				if oneofKey == key {
-					fmt.Fprintf(buf, "      %s?: %s;\n", key, tsType)
+					fmt.Fprintf(buf, "        %s?: %s;\n", key, tsType)
 				} else {
-					fmt.Fprintf(buf, "      %s?: never;\n", key)
+					fmt.Fprintf(buf, "        %s?: never;\n", key)
 				}
 			}
-			fmt.Fprintf(buf, "    }")
-			if len(oneofKeys)-1 == oneofIndex {
-				fmt.Fprintf(buf, "\n")
-			} else {
-				fmt.Fprintf(buf, " |\n")
-			}
+			fmt.Fprintf(buf, "      }\n")
 		}
 		if len(oneofTypes)-1 == index {
 			fmt.Fprintf(buf, "  >")
