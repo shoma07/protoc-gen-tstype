@@ -108,6 +108,9 @@ func writeEnumType(resp *plugin.CodeGeneratorResponse, file descriptor.FileDescr
 		fmt.Fprintf(buf, "type %s =\n", enumType.GetName())
 		valueLength := len(enumType.GetValue())
 		for index, value := range enumType.GetValue() {
+			if index == 0 {
+				continue
+			}
 			fmt.Fprintf(buf, "  | '%s'", value.GetName())
 			if index == valueLength-1 {
 				fmt.Fprintf(buf, ";")
