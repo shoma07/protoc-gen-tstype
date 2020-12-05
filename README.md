@@ -108,7 +108,7 @@ message SampleMessage {
 
 ```typescript
 type SampleMessage = Readonly<{
-  projects: Readonly<{ [key: string]: Project; }>;
+  projects: Readonly<Record<string, Project>>;
 }>;
 ```
 

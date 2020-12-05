@@ -28,14 +28,6 @@ func parseReq(r io.Reader) (*plugin.CodeGeneratorRequest, error) {
 	return &req, nil
 }
 
-func mapKeys(m map[string]string) []string {
-	ks := []string{}
-	for k, _ := range m {
-		ks = append(ks, k)
-	}
-	return ks
-}
-
 func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse, error) {
 	var err error
 	var resp plugin.CodeGeneratorResponse
@@ -43,11 +35,14 @@ func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse
 		for _, messageType := range file.GetMessageType() {
 			buf := new(bytes.Buffer)
 			fields := make(map[string]string)
+			fieldsOrder := []string{}
 			nestedTypes := make(map[string]string)
 			messageTypeName := messageType.GetName()
-			var oneofTypes []map[string]string
+			oneofTypes := []map[string]string{}
+			oneofTypesOrder := [][]string{}
 			for range messageType.GetOneofDecl() {
 				oneofTypes = append(oneofTypes, make(map[string]string))
+				oneofTypesOrder = append(oneofTypesOrder, make([]string, 0))
 			}
 			for _, nestedType := range messageType.GetNestedType() {
 				options := nestedType.GetOptions()
@@ -55,7 +50,7 @@ func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse
 					name := nestedType.GetName()
 					key := convertType(nestedType.GetField()[0], nestedTypes)
 					value := convertType(nestedType.GetField()[1], nestedTypes)
-					nestedTypes[name] = fmt.Sprintf("{ [key: %s]: %s; }", key, value)
+					nestedTypes[name] = fmt.Sprintf("Record<%s, %s>", key, value)
 				} else {
 					err = errors.New("not support nested type!")
 				}
@@ -64,15 +59,18 @@ func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse
 				key := field.GetJsonName()
 				tsType := convertType(field, nestedTypes)
 				if field.OneofIndex != nil {
-					oneofTypes[field.GetOneofIndex()][key] = tsType
+					oneofIndex := field.GetOneofIndex()
+					oneofTypes[oneofIndex][key] = tsType
+					oneofTypesOrder[oneofIndex] = append(oneofTypesOrder[oneofIndex], key)
 				} else {
 					fields[key] = tsType
+					fieldsOrder = append(fieldsOrder, key)
 				}
 			}
-			if len(fields) > 0 {
+			if len(fieldsOrder) > 0 {
 				fmt.Fprintf(buf, "type %s = Readonly<{\n", messageTypeName)
-				for key, tsType := range fields {
-					fmt.Fprintf(buf, "  %s: %s;\n", key, tsType)
+				for _, key := range fieldsOrder {
+					fmt.Fprintf(buf, "  %s: %s;\n", key, fields[key])
 				}
 				fmt.Fprintf(buf, "}>")
 				if len(oneofTypes) > 0 {
@@ -81,13 +79,43 @@ func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse
 			} else if len(oneofTypes) > 0 {
 				fmt.Fprintf(buf, "type %s =\n", messageTypeName)
 			} else {
-				fmt.Fprintf(buf, "type %s = null")
+				fmt.Fprintf(buf, "type %s = null", messageTypeName)
 			}
-			writeOneofTypes(buf, oneofTypes)
+			for index, oneof := range oneofTypes {
+				fmt.Fprintf(buf, "  Readonly<\n")
+				for _, oneofKey := range oneofTypesOrder[index] {
+					fmt.Fprintf(buf, "    | {\n")
+					for _, key := range oneofTypesOrder[index] {
+						if oneofKey == key {
+							fmt.Fprintf(buf, "        %s?: %s;\n", key, oneof[key])
+						} else {
+							fmt.Fprintf(buf, "        %s?: never;\n", key)
+						}
+					}
+					fmt.Fprintf(buf, "      }\n")
+				}
+				if len(oneofTypes)-1 == index {
+					fmt.Fprintf(buf, "  >")
+				} else {
+					fmt.Fprintf(buf, "  > &\n")
+				}
+			}
 			fmt.Fprintf(buf, ";\n")
 			appendBufferToFile(&resp, messageTypeName, buf)
 		}
-		writeEnumType(&resp, *file)
+		for _, enumType := range file.GetEnumType() {
+			buf := new(bytes.Buffer)
+			fmt.Fprintf(buf, "type %s =\n", enumType.GetName())
+			valueLength := len(enumType.GetValue())
+			for index, value := range enumType.GetValue() {
+				fmt.Fprintf(buf, "  | '%s'", value.GetName())
+				if index == valueLength-1 {
+					fmt.Fprintf(buf, ";")
+				}
+				fmt.Fprintf(buf, "\n")
+			}
+			appendBufferToFile(&resp, enumType.GetName(), buf)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -100,48 +128,6 @@ func appendBufferToFile(resp *plugin.CodeGeneratorResponse, name string, buf *by
 		Name:    proto.String(name + ".d.ts"),
 		Content: proto.String(buf.String()),
 	})
-}
-
-func writeEnumType(resp *plugin.CodeGeneratorResponse, file descriptor.FileDescriptorProto) {
-	for _, enumType := range file.GetEnumType() {
-		buf := new(bytes.Buffer)
-		fmt.Fprintf(buf, "type %s =\n", enumType.GetName())
-		valueLength := len(enumType.GetValue())
-		for index, value := range enumType.GetValue() {
-			if index == 0 {
-				continue
-			}
-			fmt.Fprintf(buf, "  | '%s'", value.GetName())
-			if index == valueLength-1 {
-				fmt.Fprintf(buf, ";")
-			}
-			fmt.Fprintf(buf, "\n")
-		}
-		appendBufferToFile(resp, enumType.GetName(), buf)
-	}
-}
-
-func writeOneofTypes(buf *bytes.Buffer, oneofTypes []map[string]string) {
-	for index, oneof := range oneofTypes {
-		fmt.Fprintf(buf, "  Readonly<\n")
-		oneofKeys := mapKeys(oneof)
-		for _, oneofKey := range oneofKeys {
-			fmt.Fprintf(buf, "    | {\n")
-			for key, tsType := range oneof {
-				if oneofKey == key {
-					fmt.Fprintf(buf, "        %s?: %s;\n", key, tsType)
-				} else {
-					fmt.Fprintf(buf, "        %s?: never;\n", key)
-				}
-			}
-			fmt.Fprintf(buf, "      }\n")
-		}
-		if len(oneofTypes)-1 == index {
-			fmt.Fprintf(buf, "  >")
-		} else {
-			fmt.Fprintf(buf, "  > &\n")
-		}
-	}
 }
 
 func convertType(field *descriptor.FieldDescriptorProto, nestedTypes map[string]string) string {
