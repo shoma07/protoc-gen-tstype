@@ -10,27 +10,27 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golang/protobuf/proto"
-	descriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
-	plugin "github.com/golang/protobuf/protoc-gen-go/plugin"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
-func parseReq(r io.Reader) (*plugin.CodeGeneratorRequest, error) {
+func parseReq(r io.Reader) (*pluginpb.CodeGeneratorRequest, error) {
 	buf, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
-	var req plugin.CodeGeneratorRequest
+	var req pluginpb.CodeGeneratorRequest
 	if err = proto.Unmarshal(buf, &req); err != nil {
 		return nil, err
 	}
 	return &req, nil
 }
 
-func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse, error) {
+func processReq(req *pluginpb.CodeGeneratorRequest) (*pluginpb.CodeGeneratorResponse, error) {
 	var err error
-	var resp plugin.CodeGeneratorResponse
+	var resp pluginpb.CodeGeneratorResponse
 	for _, file := range req.ProtoFile {
 		for _, messageType := range file.GetMessageType() {
 			buf := new(bytes.Buffer)
@@ -52,7 +52,7 @@ func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse
 					value := convertType(nestedType.GetField()[1], nestedTypes)
 					nestedTypes[name] = fmt.Sprintf("Record<%s, %s>", key, value)
 				} else {
-					err = errors.New("not support nested type!")
+					err = errors.New("not support nested type")
 				}
 			}
 			for _, field := range messageType.GetField() {
@@ -123,36 +123,36 @@ func processReq(req *plugin.CodeGeneratorRequest) (*plugin.CodeGeneratorResponse
 	return &resp, nil
 }
 
-func appendBufferToFile(resp *plugin.CodeGeneratorResponse, name string, buf *bytes.Buffer) {
-	resp.File = append(resp.File, &plugin.CodeGeneratorResponse_File{
+func appendBufferToFile(resp *pluginpb.CodeGeneratorResponse, name string, buf *bytes.Buffer) {
+	resp.File = append(resp.File, &pluginpb.CodeGeneratorResponse_File{
 		Name:    proto.String(name + ".d.ts"),
 		Content: proto.String(buf.String()),
 	})
 }
 
-func convertType(field *descriptor.FieldDescriptorProto, nestedTypes map[string]string) string {
+func convertType(field *descriptorpb.FieldDescriptorProto, nestedTypes map[string]string) string {
 	var tsType string
 	switch field.GetType() {
-	case descriptor.FieldDescriptorProto_TYPE_DOUBLE,
-		descriptor.FieldDescriptorProto_TYPE_FLOAT,
-		descriptor.FieldDescriptorProto_TYPE_INT32,
-		descriptor.FieldDescriptorProto_TYPE_INT64,
-		descriptor.FieldDescriptorProto_TYPE_UINT32,
-		descriptor.FieldDescriptorProto_TYPE_UINT64,
-		descriptor.FieldDescriptorProto_TYPE_SINT32,
-		descriptor.FieldDescriptorProto_TYPE_SINT64,
-		descriptor.FieldDescriptorProto_TYPE_FIXED32,
-		descriptor.FieldDescriptorProto_TYPE_FIXED64,
-		descriptor.FieldDescriptorProto_TYPE_SFIXED32,
-		descriptor.FieldDescriptorProto_TYPE_SFIXED64:
+	case descriptorpb.FieldDescriptorProto_TYPE_DOUBLE,
+		descriptorpb.FieldDescriptorProto_TYPE_FLOAT,
+		descriptorpb.FieldDescriptorProto_TYPE_INT32,
+		descriptorpb.FieldDescriptorProto_TYPE_INT64,
+		descriptorpb.FieldDescriptorProto_TYPE_UINT32,
+		descriptorpb.FieldDescriptorProto_TYPE_UINT64,
+		descriptorpb.FieldDescriptorProto_TYPE_SINT32,
+		descriptorpb.FieldDescriptorProto_TYPE_SINT64,
+		descriptorpb.FieldDescriptorProto_TYPE_FIXED32,
+		descriptorpb.FieldDescriptorProto_TYPE_FIXED64,
+		descriptorpb.FieldDescriptorProto_TYPE_SFIXED32,
+		descriptorpb.FieldDescriptorProto_TYPE_SFIXED64:
 		tsType = "number"
-	case descriptor.FieldDescriptorProto_TYPE_BOOL:
+	case descriptorpb.FieldDescriptorProto_TYPE_BOOL:
 		tsType = "boolean"
-	case descriptor.FieldDescriptorProto_TYPE_STRING,
-		descriptor.FieldDescriptorProto_TYPE_BYTES:
+	case descriptorpb.FieldDescriptorProto_TYPE_STRING,
+		descriptorpb.FieldDescriptorProto_TYPE_BYTES:
 		tsType = "string"
-	case descriptor.FieldDescriptorProto_TYPE_ENUM,
-		descriptor.FieldDescriptorProto_TYPE_MESSAGE:
+	case descriptorpb.FieldDescriptorProto_TYPE_ENUM,
+		descriptorpb.FieldDescriptorProto_TYPE_MESSAGE:
 		ns := strings.Split(field.GetTypeName(), ".")
 		tsType = ns[len(ns)-1]
 	default:
@@ -160,13 +160,13 @@ func convertType(field *descriptor.FieldDescriptorProto, nestedTypes map[string]
 	}
 	if val, ok := nestedTypes[tsType]; ok {
 		tsType = "Readonly<" + val + ">"
-	} else if field.GetLabel() == descriptor.FieldDescriptorProto_LABEL_REPEATED {
+	} else if field.GetLabel() == descriptorpb.FieldDescriptorProto_LABEL_REPEATED {
 		tsType = "ReadonlyArray<" + tsType + ">"
 	}
 	return tsType
 }
 
-func emitResp(resp *plugin.CodeGeneratorResponse) error {
+func emitResp(resp *pluginpb.CodeGeneratorResponse) error {
 	buf, err := proto.Marshal(resp)
 	if err != nil {
 		return err
