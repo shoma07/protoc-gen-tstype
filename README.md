@@ -5,7 +5,7 @@ Generate TypeScript Readonly type from Proto file.
 ## Install
 
 ```
-$ go get github.com/shoma07/protoc-gen-tstype
+$ go install github.com/shoma07/protoc-gen-tstype
 ```
 
 ## Run
