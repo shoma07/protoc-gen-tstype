@@ -117,6 +117,36 @@ type SampleMessage = Readonly<{
 NestedType other than map is not supported.
 Define message without nesting it.
 
+### Wrappers
+
+```proto
+message SampleMessage {
+  google.protobuf.DoubleValue double_value = 1;
+  google.protobuf.FloatValue float_value = 2;
+  google.protobuf.Int32Value int32_value = 3;
+  google.protobuf.Int64Value int64_value = 4;
+  google.protobuf.Uint32Value uint32_value = 5;
+  google.protobuf.Uint64Value uint64_value = 6;
+  google.protobuf.BoolValue bool_value = 7;
+  google.protobuf.BytesValue bytes_value = 8;
+  google.protobuf.StringValue string_value = 9;
+}
+```
+
+```typescript
+type SampleMessage = Readonly<{
+  doubleValue: number | undefined;
+  floatValue: number | undefined;
+  int32Value: number | undefined;
+  int64Value: number | undefined;
+  uint32Value: number | undefined;
+  uint64Value: number | undefined;
+  boolValue: boolean | undefined;
+  bytesValue: string | undefined;
+  stringValue: string | undefined;
+}>;
+```
+
 ## License
 
 [MIT License](https://opensource.org/licenses/MIT).

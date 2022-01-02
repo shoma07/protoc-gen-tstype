@@ -38,6 +38,20 @@ func processReq(req *pluginpb.CodeGeneratorRequest) (*pluginpb.CodeGeneratorResp
 			fieldsOrder := []string{}
 			nestedTypes := make(map[string]string)
 			messageTypeName := messageType.GetName()
+
+			switch messageTypeName {
+			case "DoubleValue",
+				"FloatValue",
+				"Int32Value",
+				"Int64Value",
+				"UInt32Value",
+				"UInt64Value",
+				"BoolValue",
+				"BytesValue",
+				"StringValue":
+				continue
+			}
+
 			oneofTypes := []map[string]string{}
 			oneofTypesOrder := [][]string{}
 			for range messageType.GetOneofDecl() {
@@ -155,6 +169,15 @@ func convertType(field *descriptorpb.FieldDescriptorProto, nestedTypes map[strin
 		descriptorpb.FieldDescriptorProto_TYPE_MESSAGE:
 		ns := strings.Split(field.GetTypeName(), ".")
 		tsType = ns[len(ns)-1]
+
+		switch tsType {
+		case "DoubleValue", "FloatValue", "Int32Value", "Int64Value", "UInt32Value", "UInt64Value":
+			tsType = "number | undefined"
+		case "BoolValue":
+			tsType = "boolean | undefined"
+		case "BytesValue", "StringValue":
+			tsType = "string | undefined"
+		}
 	default:
 		tsType = "unknown"
 	}
